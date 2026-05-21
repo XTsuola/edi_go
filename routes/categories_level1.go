@@ -1,10 +1,12 @@
-package controllers
+package routes
 
 import (
-	"github.com/gin-gonic/gin"
 	my "go_project/config"
 	"go_project/models"
+	"go_project/utils"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
 )
 
 // 总类分组
@@ -55,7 +57,7 @@ func categoriesLevel1List(c *gin.Context) {
 func categoriesLevel1Add(c *gin.Context) {
 	var params models.CategoriesLevel1AddParams
 	if err := c.ShouldBindJSON(&params); err != nil {
-		MyErr(err.Error(), c)
+		ParamsErr(err.Error(), c)
 		return
 	}
 	var count int64
@@ -77,7 +79,7 @@ func categoriesLevel1Add(c *gin.Context) {
 		my.DB.Table("categories_level1").Select("MAX(sort_order)").Scan(&sortOrder)
 		sortOrder += 1
 	}
-	nowTime := NowTimestamptz()
+	nowTime := utils.NowTimestamptz()
 	data := models.CategoriesLevel1AddData{
 		Name:        params.Name,
 		CategoryId:  categoryId + 1,
@@ -89,8 +91,8 @@ func categoriesLevel1Add(c *gin.Context) {
 		UpdatedTime: nowTime,
 		IsDeleted:   false,
 	}
-	if err2 := my.DB.Table("categories_level1").Create(&data).Error; err2 != nil {
-		MyErr(err2.Error(), c)
+	if err := my.DB.Table("categories_level1").Create(&data).Error; err != nil {
+		MyErr(err.Error(), c)
 		return
 	}
 	CreateOk("新增成功", c)
@@ -101,7 +103,7 @@ func categoriesLevel1Update(c *gin.Context) {
 	id := c.Param("id")
 	var params models.CategoriesLevel1Update
 	if err := c.ShouldBindJSON(&params); err != nil {
-		MyErr(err.Error(), c)
+		ParamsErr(err.Error(), c)
 		return
 	}
 	updateData := make(map[string]interface{})
@@ -120,9 +122,9 @@ func categoriesLevel1Update(c *gin.Context) {
 		HandleOk("修改成功", c)
 		return
 	}
-	updateData["updated_time"] = NowTimestamptz()
-	if err2 := my.DB.Table("categories_level1").Where("id = ?", id).Updates(updateData).Error; err2 != nil {
-		MyErr(err2.Error(), c)
+	updateData["updated_time"] = utils.NowTimestamptz()
+	if err := my.DB.Table("categories_level1").Where("id = ?", id).Updates(updateData).Error; err != nil {
+		MyErr(err.Error(), c)
 		return
 	}
 	HandleOk("修改成功", c)

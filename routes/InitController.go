@@ -1,6 +1,8 @@
-package controllers
+package routes
 
 import (
+	jwt "go_project/middleware"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,11 +20,13 @@ func InitController() {
 
 		// 需要token认证的子分组
 		authGroup := v1Group.Group("/")
-		authGroup.Use(AuthMiddleware()) // 启用中间件
+		authGroup.Use(jwt.AuthMiddleware()) // 启用中间件
 		{
 			// 只有携带有效token才能访问
 			authGroup.POST("/users/change-password/", changePassword)
 			authGroup.POST("/upload/file/", uploadFile)
+			authGroup.POST("/file_service/upload/chunked/", uploadChunkHandler)
+			authGroup.POST("/file_service/upload/process/", fileProcess)
 			authGroup.POST("/auth/users/logout/", logout)
 			authGroup.GET("/categories/level1/", categoriesLevel1List)
 			authGroup.POST("/categories/level1/", categoriesLevel1Add)

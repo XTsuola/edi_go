@@ -1,8 +1,9 @@
-package controllers
+package routes
 
 import (
 	my "go_project/config"
 	"go_project/models"
+	"go_project/utils"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -38,7 +39,7 @@ func parameterTemplatesList(c *gin.Context) {
 func parameterTemplatesAdd(c *gin.Context) {
 	var params models.ParameterTemplatesAddParams
 	if err := c.ShouldBindJSON(&params); err != nil {
-		MyErr(err.Error(), c)
+		ParamsErr(err.Error(), c)
 		return
 	}
 	var count int64
@@ -47,7 +48,7 @@ func parameterTemplatesAdd(c *gin.Context) {
 		ParamsErr("参数键名称已存在，不能重复添加", c)
 		return
 	}
-	nowTime := NowTimestamptz()
+	nowTime := utils.NowTimestamptz()
 	data := models.ParameterTemplatesAddData{
 		ParamName:       params.ParamName,
 		ParamGroupId:    params.ParamGroupId,
@@ -63,8 +64,8 @@ func parameterTemplatesAdd(c *gin.Context) {
 		UpdatedTime:     nowTime,
 		IsDeleted:       false,
 	}
-	if err2 := my.DB.Table("parameter_templates").Create(&data).Error; err2 != nil {
-		MyErr(err2.Error(), c)
+	if err := my.DB.Table("parameter_templates").Create(&data).Error; err != nil {
+		MyErr(err.Error(), c)
 		return
 	}
 	CreateOk("新增成功", c)
@@ -75,7 +76,7 @@ func parameterTemplatesUpdate(c *gin.Context) {
 	id := c.Param("id")
 	var params models.ParameterTemplatesUpdate
 	if err := c.ShouldBindJSON(&params); err != nil {
-		MyErr(err.Error(), c)
+		ParamsErr(err.Error(), c)
 		return
 	}
 	updateData := make(map[string]interface{})
@@ -114,9 +115,9 @@ func parameterTemplatesUpdate(c *gin.Context) {
 		HandleOk("修改成功", c)
 		return
 	}
-	updateData["updated_time"] = NowTimestamptz()
-	if err2 := my.DB.Table("parameter_templates").Where("id = ?", id).Updates(updateData).Error; err2 != nil {
-		MyErr(err2.Error(), c)
+	updateData["updated_time"] = utils.NowTimestamptz()
+	if err := my.DB.Table("parameter_templates").Where("id = ?", id).Updates(updateData).Error; err != nil {
+		MyErr(err.Error(), c)
 		return
 	}
 	HandleOk("修改成功", c)

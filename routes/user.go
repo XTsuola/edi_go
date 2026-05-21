@@ -1,9 +1,11 @@
-package controllers
+package routes
 
 import (
-	"github.com/gin-gonic/gin"
 	my "go_project/config"
+	jwt "go_project/middleware"
 	"go_project/models"
+
+	"github.com/gin-gonic/gin"
 )
 
 func changePassword(c *gin.Context) {
@@ -24,12 +26,12 @@ func changePassword(c *gin.Context) {
 		return
 	}
 	// 校验密码
-	if !CheckPassword(user.Password, params.OldPassword) {
+	if !jwt.CheckPassword(user.Password, params.OldPassword) {
 		MyErr("原密码错误", c)
 		return
 	}
 	// 密码加密
-	hashedPwd, err := HashPassword(params.NewPassword)
+	hashedPwd, err := jwt.HashPassword(params.NewPassword)
 	if err != nil {
 		MyErr("加密失败", c)
 		return

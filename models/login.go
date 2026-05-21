@@ -1,6 +1,9 @@
 package models
 
-import "github.com/jackc/pgx/v5/pgtype"
+import (
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 type RegisterParams struct {
 	Username string `json:"username"`
@@ -19,6 +22,7 @@ type LogoutParams struct {
 }
 
 type RegisterUserData struct {
+	ID          uuid.UUID          `json:"id"`
 	Username    string             `json:"username"`
 	Email       string             `json:"email"`
 	Password    string             `json:"password"`

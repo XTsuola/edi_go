@@ -1,7 +1,7 @@
 package router
 
 import (
-	"go_project/controllers"
+	"go_project/routes"
 	"log"
 	"path/filepath"
 	"runtime"
@@ -14,7 +14,7 @@ func StartHTTPS() {
 	certFile := filepath.Join(currentDir, "server.pem")
 	keyFile := filepath.Join(currentDir, "server.key")
 	// 关键：在8002端口启动HTTPS
-	err := controllers.R.RunTLS(":8002", certFile, keyFile)
+	err := routes.R.RunTLS(":8002", certFile, keyFile)
 	if err != nil {
 		log.Fatal("❌ 启动失败:", err)
 	}

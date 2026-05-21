@@ -1,11 +1,13 @@
-package controllers
+package routes
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	my "go_project/config"
 	"go_project/models"
+	"go_project/utils"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // 获取参数分组列表
@@ -34,7 +36,7 @@ func parameterGroupList(c *gin.Context) {
 func parameterGroupAdd(c *gin.Context) {
 	var params models.ParameterGroupsAddParams
 	if err := c.ShouldBindJSON(&params); err != nil {
-		MyErr(err.Error(), c)
+		ParamsErr(err.Error(), c)
 		return
 	}
 	var count int64
@@ -43,7 +45,7 @@ func parameterGroupAdd(c *gin.Context) {
 		ParamsErr("名称已存在，不能重复添加", c)
 		return
 	}
-	nowTime := NowTimestamptz()
+	nowTime := utils.NowTimestamptz()
 	data := models.ParameterGroupsAddData{
 		GroupId:     uuid.New(),
 		GroupName:   params.GroupName,
@@ -52,8 +54,8 @@ func parameterGroupAdd(c *gin.Context) {
 		UpdatedTime: nowTime,
 		IsDeleted:   false,
 	}
-	if err2 := my.DB.Table("parameter_groups").Create(&data).Error; err2 != nil {
-		MyErr(err2.Error(), c)
+	if err := my.DB.Table("parameter_groups").Create(&data).Error; err != nil {
+		MyErr(err.Error(), c)
 		return
 	}
 	CreateOk("新增成功", c)
@@ -79,7 +81,7 @@ func parameterGroupUpdate(c *gin.Context) {
 		HandleOk("修改成功", c)
 		return
 	}
-	updateData["updated_time"] = NowTimestamptz()
+	updateData["updated_time"] = utils.NowTimestamptz()
 	if err2 := my.DB.Table("parameter_groups").Where("id = ?", id).Updates(updateData).Error; err2 != nil {
 		MyErr(err2.Error(), c)
 		return

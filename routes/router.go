@@ -1,15 +1,11 @@
-package controllers
+package routes
 
 import (
-	"encoding/base64"
-	"encoding/json"
-	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgtype"
 	"go_project/models"
+	"go_project/utils"
 	"net/http"
-	"os"
-	"strings"
-	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 /*
@@ -23,55 +19,6 @@ import (
 500 = http.StatusInternalServerError // 服务器错误
 */
 
-// WriteImg 写入二进制图片文件封装
-func WriteImg(imgStr string, savePath string) {
-	if idx := strings.Index(imgStr, ","); idx != -1 {
-		imgStr = imgStr[idx+1:]
-	}
-	data, _ := base64.StdEncoding.DecodeString(imgStr)
-	err := os.WriteFile(savePath, data, 0644)
-	if err != nil {
-		return
-	}
-}
-
-// NowTimestamptz 获取当前时间
-func NowTimestamptz() pgtype.Timestamptz {
-	return pgtype.Timestamptz{
-		Time:  time.Now(),
-		Valid: true,
-	}
-}
-
-// If 三元表达式
-func If(condition bool, trueVal, falseVal interface{}) interface{} {
-	if condition {
-		return trueVal
-	}
-	return falseVal
-}
-
-// ArrToString 数组转字符串
-func ArrToString[T any](arr []T) string {
-	if len(arr) == 0 {
-		return `[]`
-	} else {
-		jsonBytes, _ := json.Marshal(arr)
-		jsonStr := string(jsonBytes)
-		return jsonStr
-	}
-}
-
-// StringToArr 字符串转数组
-func StringToArr[T any](str string) []T {
-	var arr []T
-	err := json.Unmarshal([]byte(str), &arr)
-	if err != nil || len(arr) == 0 {
-		arr = []T{}
-	}
-	return arr
-}
-
 // MyErr 接口500报错
 func MyErr(err string, c *gin.Context) {
 	c.JSON(http.StatusInternalServerError, gin.H{
@@ -79,9 +26,16 @@ func MyErr(err string, c *gin.Context) {
 	})
 }
 
-// ParamsErr 接口参数报错
+// ParamsErr 接口参数400报错
 func ParamsErr(err string, c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{
+		"message": err,
+	})
+}
+
+// AuthorizedErr 接口参数400报错
+func AuthorizedErr(err string, c *gin.Context) {
+	c.JSON(http.StatusUnauthorized, gin.H{
 		"message": err,
 	})
 }
@@ -109,7 +63,7 @@ func SearchList[T any](msg string, c *gin.Context, data []T) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
-		"msg":  If(msg == "", "success", msg),
+		"msg":  utils.If(msg == "", "success", msg),
 		"data": data,
 	})
 }
@@ -118,7 +72,7 @@ func SearchList[T any](msg string, c *gin.Context, data []T) {
 func SearchOne[T any](msg string, c *gin.Context, data T) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
-		"msg":  If(msg == "", "success", msg),
+		"msg":  utils.If(msg == "", "success", msg),
 		"data": data,
 	})
 }
