@@ -24,9 +24,9 @@ func InitController() {
 		{
 			// 只有携带有效token才能访问
 			authGroup.POST("/users/change-password/", changePassword)
-			authGroup.POST("/upload/file/", uploadFile)
+			//authGroup.POST("/upload/file/", uploadFile)
 			authGroup.POST("/file_service/upload/chunked/", uploadChunkHandler)
-			authGroup.POST("/file_service/upload/process/", fileProcess)
+			authGroup.POST("/file_service/upload/process/", processFile)
 			authGroup.POST("/auth/users/logout/", logout)
 			authGroup.GET("/categories/level1/", categoriesLevel1List)
 			authGroup.POST("/categories/level1/", categoriesLevel1Add)

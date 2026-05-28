@@ -2,18 +2,21 @@ package routes
 
 import (
 	"archive/zip"
-	"bytes"
 	"fmt"
+	my "go_project/config"
 	"go_project/models"
+	"go_project/utils"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // BMComponent ===================== 【模型 动态结构体】 =====================
@@ -86,100 +89,168 @@ func parseBMComponent(content string) BMComponent {
 	return comp
 }
 
-func uploadFile(c *gin.Context) {
-	// 1. 获取上传的zip文件
-	fileHeader, err := c.FormFile("zipfile")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "获取文件失败：" + err.Error()})
+const chunkDir = "./temp"    // 分片存放目录
+const mergeDir = "./uploads" // 合并后文件存放目录
+// 解析模型压缩包
+func processFile(c *gin.Context) {
+	UUID := c.PostForm("file_uuid")
+	if UUID == "" {
+		c.JSON(400, gin.H{"error": "缺少 file_uuid"})
 		return
 	}
 
-	// 2. 打开文件流
-	file, err := fileHeader.Open()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "打开文件失败"})
-		return
-	}
-	defer file.Close()
-
-	// 3. 读取到内存
-	buf, _ := io.ReadAll(file)
-
-	// 4. 解析ZIP
-	zipReader, err := zip.NewReader(bytes.NewReader(buf), fileHeader.Size)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "非法ZIP文件"})
+	// 1. 找到分片目录
+	uuidChunkDir := filepath.Join(chunkDir, UUID)
+	if _, err := os.Stat(uuidChunkDir); os.IsNotExist(err) {
+		c.JSON(400, gin.H{"error": "分片目录不存在: " + uuidChunkDir})
 		return
 	}
 
-	// ===================== 核心：匹配动态目录 =====================
-	// 固定前缀：filter_HPF/filter_HPF/cmp/
-	basePath := "filter_HPF/cmp/"
-	var epFiles []gin.H
+	// 2. 读取分片
+	entries, _ := os.ReadDir(uuidChunkDir)
+	var chunks []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			chunks = append(chunks, filepath.Join(uuidChunkDir, e.Name()))
+		}
+	}
 
-	// 遍历压缩包内所有文件
+	// 3. 分片排序
+	sort.Slice(chunks, func(i, j int) bool {
+		a, _ := strconv.Atoi(filepath.Base(chunks[i]))
+		b, _ := strconv.Atoi(filepath.Base(chunks[j]))
+		return a < b
+	})
+
+	// 4. 合并成 ZIP
+	mergePath := filepath.Join(mergeDir, UUID+".zip")
+	dst, _ := os.Create(mergePath)
+	for _, part := range chunks {
+		src, _ := os.Open(part)
+		io.Copy(dst, src)
+		src.Close()
+	}
+	dst.Sync()
+	dst.Close()
+
+	// 5. 打开合并后的 ZIP
+	zipFile, _ := os.Open(mergePath)
+	fi, _ := zipFile.Stat()
+	zipReader, _ := zip.NewReader(zipFile, fi.Size())
+	defer zipFile.Close()
+
+	type EpFile struct {
+		Path    string `json:"path"`
+		Content string `json:"content"` // 如果是二进制就用 []byte
+	}
+
+	// 你原来的变量
+	var epFileList []EpFile
+
+	// 新增：存储所有 uuid 目录 + 标记是否有 .ep 文件
+	allUUIDDirs := make(map[string]bool)
+
+	// --- 第一步：先把 cmp 下所有 uuid 文件夹找出来 ---
 	for _, f := range zipReader.File {
-		filePath := f.Name
+		if f.FileInfo().IsDir() {
+			parentDir := filepath.Dir(f.Name)
+			if strings.HasSuffix(parentDir, "/cmp") || strings.HasSuffix(parentDir, "\\cmp") {
+				allUUIDDirs[f.Name] = false // 先标记：没有ep
+			}
+		}
+	}
+
+	// --- 第二步：你原来的遍历逻辑（我只改一点点） ---
+	for _, f := range zipReader.File {
 		// 跳过文件夹
 		if f.FileInfo().IsDir() {
 			continue
 		}
 
-		// 1. 必须在 basePath 路径下
-		if !strings.HasPrefix(filePath, basePath) {
-			continue
-		}
+		// 只处理：.ep 后缀 + 在 cmp 目录下
+		if strings.HasSuffix(f.Name, ".ep") && strings.Contains(f.Name, "/cmp/") {
+			// 打开 .ep 文件
+			rc, err := f.Open()
+			if err != nil {
+				continue
+			}
 
-		// 2. 必须是 .ep 后缀
-		if filepath.Ext(filePath) != ".ep" {
-			continue
-		}
+			// 读取内容
+			content, err := io.ReadAll(rc)
+			rc.Close()
 
-		// 3. 必须是 basePath 下一级目录里的文件（动态UUID目录）
-		// 切割路径，确保结构是 basePath/xxx/xxx.ep
-		relPath := strings.TrimPrefix(filePath, basePath)
-		parts := strings.Split(relPath, "/")
-		if len(parts) < 2 { // 必须在子目录里
-			continue
-		}
+			if err == nil {
+				epFileList = append(epFileList, EpFile{
+					Path:    f.Name,
+					Content: string(content),
+				})
+			}
 
-		// ===================== 读取 .ep 文件内容 =====================
-		rc, err2 := f.Open()
-		if err2 != nil {
-			continue
+			// --- 新增：标记这个 uuid 文件夹有 .ep ---
+			fileDir := filepath.Dir(f.Name)
+			if _, ok := allUUIDDirs[fileDir]; ok {
+				allUUIDDirs[fileDir] = true
+			}
 		}
-		content, _ := io.ReadAll(rc)
-		rc.Close()
+	}
+	fmt.Println(allUUIDDirs, "888")
 
-		// 收集结果
-		epFiles = append(epFiles, gin.H{
-			"file_path": filePath,        // 完整路径
-			"uuid_dir":  parts[0],        // 动态UUID目录名
-			"file_size": len(content),    // 文件大小
-			"content":   string(content), // 文件内容
-		})
-		for i, e := range epFiles {
-			fmt.Println(i)
-			fmt.Println(e["file_path"])
-			fmt.Println(e["uuid_dir"])
-			fmt.Println(e["file_size"])
-			comp := parseBMComponent(string(content))
-			fmt.Println(comp)
-			fmt.Println("模型ID：", comp.ComponentID)
-			fmt.Println("描述：", comp.Description)
-			fmt.Println("ModelParams ", comp.ModelParams["cutoff_freq"])
+	// --- 第三步：找出没有 .ep 的 uuid ---
+	var emptyUUIDs []string
+	for dirPath, hasEp := range allUUIDDirs {
+		if !hasEp {
+			uuid := filepath.Base(dirPath) // 只拿 uuid 名称
+			emptyUUIDs = append(emptyUUIDs, uuid)
 		}
 	}
 
-	// 保存文件到本地
-	//savePath := "./upload/" + file.Filename
-	//err = c.SaveUploadedFile(file, savePath)
-	//if err != nil {
-	//	c.JSON(http.StatusInternalServerError, gin.H{
-	//		"error": "文件保存失败",
-	//	})
-	//	return
-	//}
+	// --- 第四步：如果有空的，返回错误 ---
+	var err error
+	if len(emptyUUIDs) > 0 {
+		err = fmt.Errorf("以下UUID文件夹缺少.ep文件：%v", emptyUUIDs)
+	}
+
+	// 查询categories_id最大值
+	var model_packages_id int
+	my.DB.Table("model_packages").Select("MAX(id)").Scan(&model_packages_id)
+	nowTime := utils.NowTimestamptz()
+	userID, _ := c.Get("userID")
+	userIDStr, ok := userID.(string)
+	if !ok {
+		return
+	}
+	userUUID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(400, gin.H{"msg": "用户ID不是合法UUID"})
+		return
+	}
+	data := models.ModelPackagesAll{
+		ID:            model_packages_id + 1,
+		FileUUID:      userIDStr + UUID, // 你接口里的 file_uuid
+		FileName:      "blob",           // 文件名
+		TotalChunks:   len(chunks),      // 总分片数
+		FileMd5:       UUID,             // 后面可以计算
+		StorageType:   "local",
+		StoragePath:   filepath.Join(mergeDir, UUID+".zip"), // 合并后的文件路径
+		FileSize:      0,                                    // 后面可以填真实大小
+		Status:        "success",                            // 状态：已上传/已合并/已解析
+		DeviceModelId: uuid.Nil,                             // 设备模型ID（如果有就传真实uuid）
+		UploadedById:  userUUID,                             // 上传人ID
+		CreatedTime:   nowTime,
+		UpdatedTime:   nowTime,
+	}
+	if err2 := my.DB.Table("model_packages").Create(&data).Error; err2 != nil {
+		MyErr(err2.Error(), c)
+		return
+	}
+	CreateOk("新增成功", c)
+	for _, epFile := range epFileList {
+		comp := parseBMComponent(epFile.Content)
+		fmt.Println(comp)
+	}
+
+	// 清理分片
+	os.RemoveAll(uuidChunkDir)
 }
 
 // 获取分片保存路径
@@ -206,11 +277,10 @@ func isAllChunksUploaded(fileMD5 string, total int) bool {
 }
 
 func uploadChunkHandler(c *gin.Context) {
-	fileMD5 := c.PostForm("file_md5")
+	UUID := c.PostForm("file_uuid")
 	indexStr := c.PostForm("chunk_index")
 	totalStr := c.PostForm("total_chunks")
-	fmt.Println(fileMD5, indexStr, totalStr)
-	if fileMD5 == "" || indexStr == "" || totalStr == "" {
+	if UUID == "" || indexStr == "" || totalStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数不全"})
 		return
 	}
@@ -228,7 +298,7 @@ func uploadChunkHandler(c *gin.Context) {
 		})
 		return
 	}
-	savePath := getChunkPath(fileMD5, index)
+	savePath := getChunkPath(UUID, index)
 	if err2 := c.SaveUploadedFile(chunkFile, savePath); err2 != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "保存分片失败"})
 		return

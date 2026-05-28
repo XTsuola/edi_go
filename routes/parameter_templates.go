@@ -54,6 +54,7 @@ func parameterTemplatesAdd(c *gin.Context) {
 		ParamGroupId:    params.ParamGroupId,
 		ParamKey:        params.ParamKey,
 		DataType:        params.DataType,
+		ValueType:       params.ValueType,
 		Unit:            params.Unit,
 		OptionalUnits:   params.OptionalUnits,
 		IsRequired:      params.IsRequired,
@@ -91,6 +92,9 @@ func parameterTemplatesUpdate(c *gin.Context) {
 	}
 	if params.DataType != nil {
 		updateData["data_type"] = *params.DataType
+	}
+	if params.ValueType != nil {
+		updateData["value_type"] = *params.ValueType
 	}
 	if params.Unit != nil {
 		updateData["Unit"] = *params.Unit

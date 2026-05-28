@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -11,6 +12,7 @@ type ParameterTemplatesList struct {
 	ParamName       string             `json:"param_name"`
 	ParamKey        string             `json:"param_key"`
 	DataType        string             `json:"data_type"`
+	ValueType       string             `json:"value_type"`
 	ParamGroupId    uuid.UUID          `json:"param_group_id"`
 	Unit            string             `json:"Unit" gorm:"column:Unit"`
 	OptionalUnits   json.RawMessage    `json:"OptionalUnits" gorm:"column:OptionalUnits"`
@@ -44,6 +46,7 @@ type ParameterTemplatesAddParams struct {
 	ParamGroupId    uuid.UUID       `json:"param_group_id"`
 	ParamKey        string          `json:"param_key"`
 	DataType        string          `json:"data_type"`
+	ValueType       string          `json:"value_type"`
 	Unit            string          `json:"Unit" gorm:"column:Unit"`
 	OptionalUnits   json.RawMessage `json:"OptionalUnits" gorm:"column:OptionalUnits"`
 	IsRequired      bool            `json:"is_required"`
@@ -57,6 +60,7 @@ type ParameterTemplatesUpdate struct {
 	ParamGroupId    *uuid.UUID       `json:"param_group_id"`
 	ParamKey        *string          `json:"param_key"`
 	DataType        *string          `json:"data_type"`
+	ValueType       *string          `json:"value_type"`
 	Unit            *string          `json:"Unit" gorm:"column:Unit"`
 	OptionalUnits   *json.RawMessage `json:"OptionalUnits" gorm:"column:OptionalUnits"`
 	IsRequired      *bool            `json:"is_required"`
