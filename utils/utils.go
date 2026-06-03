@@ -91,7 +91,7 @@ func StartCleanShardJob() {
 // CleanExpiredShards 真正执行清理的逻辑
 func CleanExpiredShards() {
 	shardDir := "./temp"
-	expireDuration := 24 * time.Second
+	expireDuration := 24 * time.Hour
 
 	// 自动创建 temp 目录（如果不存在）
 	if _, err := os.Stat(shardDir); os.IsNotExist(err) {
