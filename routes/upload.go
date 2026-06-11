@@ -2,11 +2,14 @@ package routes
 
 import (
 	"archive/zip"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	my "go_project/config"
 	"go_project/models"
 	"go_project/utils"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +20,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 // BMComponent ===================== 【模型 动态结构体】 =====================
@@ -24,6 +29,8 @@ type BMComponent struct {
 	ComponentID     string            `json:"component_id"`
 	Name            string            `json:"name"`
 	Manufacturer    string            `json:"manufacturer"`
+	ModelGenlType   string            `json:"model_genl_type"`
+	ModelSubType    string            `json:"model_sub_type"`
 	Size            string            `json:"size"`
 	Description     string            `json:"description"`
 	Author          string            `json:"author"`
@@ -35,6 +42,12 @@ type BMComponent struct {
 
 // UploadDir = "./upload"
 var TempDir = "./temp"
+
+func gbkToUtf8(s []byte) (string, error) {
+	reader := transform.NewReader(bytes.NewReader(s), simplifiedchinese.GBK.NewDecoder())
+	utf8Bytes, err := ioutil.ReadAll(reader)
+	return string(utf8Bytes), err
+}
 
 func parseBMComponent(content string) BMComponent {
 	var comp BMComponent
@@ -49,13 +62,15 @@ func parseBMComponent(content string) BMComponent {
 
 	// 2. 提取基础字段
 	baseKv := map[string]*string{
-		"name":         &comp.Name,
-		"Manufacturer": &comp.Manufacturer,
-		"Size":         &comp.Size,
-		"description":  &comp.Description,
-		"author":       &comp.Author,
-		"version":      &comp.Version,
-		"created":      &comp.Created,
+		"name":          &comp.Name,
+		"Manufacturer":  &comp.Manufacturer,
+		"ModelGenlType": &comp.ModelGenlType,
+		"ModelSubType":  &comp.ModelSubType,
+		"Size":          &comp.Size,
+		"description":   &comp.Description,
+		"author":        &comp.Author,
+		"version":       &comp.Version,
+		"created":       &comp.Created,
 	}
 	for k, v := range baseKv {
 		p := regexp.MustCompile(`\(` + regexp.QuoteMeta(k) + `\s+"([^"]+)"\)`)
@@ -138,20 +153,18 @@ func processFile(c *gin.Context) {
 	fi, _ := zipFile.Stat()
 	zipReader, _ := zip.NewReader(zipFile, fi.Size())
 	defer zipFile.Close()
-
 	type EpFile struct {
 		Path    string `json:"path"`
 		Content string `json:"content"` // 如果是二进制就用 []byte
 	}
-
-	// 你原来的变量
 	var epFileList []EpFile
-
-	// 新增：存储所有 uuid 目录 + 标记是否有 .ep 文件
 	allUUIDDirs := make(map[string]bool)
-
-	// --- 第一步：先把 cmp 下所有 uuid 文件夹找出来 ---
+	flag, libraryNameByte := true, ""
 	for _, f := range zipReader.File {
+		if f.FileInfo().IsDir() && flag {
+			libraryNameByte = filepath.Base(f.Name)
+			flag = false
+		}
 		if f.FileInfo().IsDir() {
 			parentDir := filepath.Dir(f.Name)
 			if strings.HasSuffix(parentDir, "/cmp") || strings.HasSuffix(parentDir, "\\cmp") {
@@ -159,8 +172,6 @@ func processFile(c *gin.Context) {
 			}
 		}
 	}
-
-	// --- 第二步：你原来的遍历逻辑（我只改一点点） ---
 	for _, f := range zipReader.File {
 		// 跳过文件夹
 		if f.FileInfo().IsDir() {
@@ -193,9 +204,6 @@ func processFile(c *gin.Context) {
 			}
 		}
 	}
-	fmt.Println(allUUIDDirs, "888")
-
-	// --- 第三步：找出没有 .ep 的 uuid ---
 	var emptyUUIDs []string
 	for dirPath, hasEp := range allUUIDDirs {
 		if !hasEp {
@@ -203,14 +211,10 @@ func processFile(c *gin.Context) {
 			emptyUUIDs = append(emptyUUIDs, uuid)
 		}
 	}
-
-	// --- 第四步：如果有空的，返回错误 ---
 	var err error
 	if len(emptyUUIDs) > 0 {
 		err = fmt.Errorf("以下UUID文件夹缺少.ep文件：%v", emptyUUIDs)
 	}
-
-	// 查询categories_id最大值
 	var model_packages_id int
 	my.DB.Table("model_packages").Select("MAX(id)").Scan(&model_packages_id)
 	nowTime := utils.NowTimestamptz()
@@ -224,10 +228,56 @@ func processFile(c *gin.Context) {
 		c.JSON(400, gin.H{"msg": "用户ID不是合法UUID"})
 		return
 	}
+	libraryName, _ := gbkToUtf8([]byte(libraryNameByte))
+	CreateOk("新增成功", c)
+	for _, epFile := range epFileList {
+		comp := parseBMComponent(epFile.Content)
+		fmt.Println(comp.ModelParams, "111")
+		fmt.Println(comp.ModelParamsUnit, "222")
+		// 自动合并成目标结构
+		units := make(map[string]string)
+		values := make(map[string]string)
+		// 自动遍历所有字段（通用，不固定字段）
+		for k, v := range comp.ModelParams {
+			values[k] = fmt.Sprintf("%v", v)
+		}
+		for k, v := range comp.ModelParamsUnit {
+			units[k] = fmt.Sprintf("%v", v)
+		}
+		result := map[string]any{
+			"units":  units,
+			"values": values,
+		}
+		Parameters, _ := json.MarshalIndent(result, "", "  ")
+		TotalId, _ := strconv.Atoi(comp.ModelGenlType)
+		CategoryId, _ := strconv.Atoi(comp.ModelSubType)
+		modelData := models.ModelAll{
+			ID:          uuid.New(),
+			ModelName:   comp.Name,
+			LibraryName: libraryName,
+			Version:     comp.Version,
+			Description: comp.Description,
+			Status:      "draft",
+			IsPublic:    false,
+			CreatedTime: nowTime,
+			UpdatedTime: nowTime,
+			IsDeleted:   false,
+			TotalId:     TotalId,
+			CategoryId:  CategoryId,
+			UserId:      userUUID,
+			Extra:       "{}",
+			Parameters:  string(Parameters),
+		}
+		fmt.Println(modelData)
+		if err2 := my.DB.Table("models").Create(&modelData).Error; err2 != nil {
+			MyErr(err2.Error(), c)
+			return
+		}
+	}
 	data := models.ModelPackagesAll{
 		ID:            model_packages_id + 1,
 		FileUUID:      userIDStr + UUID, // 你接口里的 file_uuid
-		FileName:      "blob",           // 文件名
+		FileName:      libraryName,      // 文件名
 		TotalChunks:   len(chunks),      // 总分片数
 		FileMd5:       UUID,             // 后面可以计算
 		StorageType:   "local",
@@ -239,17 +289,11 @@ func processFile(c *gin.Context) {
 		CreatedTime:   nowTime,
 		UpdatedTime:   nowTime,
 	}
-	if err2 := my.DB.Table("model_packages").Create(&data).Error; err2 != nil {
-		MyErr(err2.Error(), c)
+	if err3 := my.DB.Table("model_packages").Create(&data).Error; err3 != nil {
+		MyErr(err3.Error(), c)
 		return
 	}
-	CreateOk("新增成功", c)
-	for _, epFile := range epFileList {
-		comp := parseBMComponent(epFile.Content)
-		fmt.Println(comp)
-	}
 
-	// 清理分片
 	os.RemoveAll(uuidChunkDir)
 }
 
