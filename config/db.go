@@ -2,9 +2,10 @@ package config
 
 import (
 	"fmt"
+	"log"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"log"
 )
 
 var DB *gorm.DB // 全局数据库对象
@@ -15,7 +16,7 @@ func InitDB() {
 	port := 5432
 	user := "postgres"
 	password := "123456"
-	dbname := "edi-mms"
+	dbname := "edi"
 
 	// PostgreSQL DSN 正确写法
 	dsn := fmt.Sprintf(

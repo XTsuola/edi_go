@@ -229,7 +229,7 @@ func processFile(c *gin.Context) {
 		return
 	}
 	libraryName, _ := gbkToUtf8([]byte(libraryNameByte))
-	CreateOk("新增成功", c)
+	//CreateOk("新增成功", c)
 	for _, epFile := range epFileList {
 		comp := parseBMComponent(epFile.Content)
 		fmt.Println(comp.ModelParams, "111")
